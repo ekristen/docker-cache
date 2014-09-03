@@ -112,14 +112,14 @@ DockerCache.prototype.updateContainers = function() {
     async.each(containers, function(container, cb) {
       cache.docker.getContainer(container.Id).inspect(function(err, containerInfo) {
         if (err) {
-          cb(err);
+          return cb(err);
         }
 
         containerInfo.Id = containerInfo.ID || containerInfo.Id;
 
         cache.setContainerInfo(containerInfo, function(err) {
           if (err) {
-            cb(err);
+            return cb(err);
           }
           
           cb();
@@ -156,7 +156,7 @@ DockerCache.prototype.setContainerList = function(containers) {
       multi.expire(key, cache.ttl);
       multi.exec(function(err, replies) {
         if (err) {
-          cb(err);
+          return cb(err);
         }
         
         cb();
@@ -208,8 +208,9 @@ DockerCache.prototype.setContainerInfo = function(container, callback) {
   
       multi.exec(function(err, replies) {
         if (err) {
-          cb(err);
+          return cb(err);
         }
+
         cb();
       });
     },
@@ -224,7 +225,7 @@ DockerCache.prototype.setContainerInfo = function(container, callback) {
       multi.expire(key, cache.ttl);
       multi.exec(function(err, replies) {
         if (err) {
-          cb(err);
+          return cb(err);
         }
         
         cb();
@@ -249,7 +250,7 @@ DockerCache.prototype.setContainerInfo = function(container, callback) {
       
       multi.exec(function(err, replies) {
         if (err) {
-          cb(err);
+          return cb(err);
         }
         
         cb();
@@ -262,7 +263,7 @@ DockerCache.prototype.setContainerInfo = function(container, callback) {
     }
   ], function(err) {
     if (err) {
-      callback(err);
+      return callback(err);
     }
     
     callback();
@@ -276,7 +277,7 @@ DockerCache.prototype.addContainer = function(container, callback) {
     function(cb) {
       cache.setContainerInfo(container, function(err) {
         if (err) {
-          cb(err);
+          return cb(err);
         }
 
         cb();
@@ -293,7 +294,7 @@ DockerCache.prototype.addContainer = function(container, callback) {
     }
   ], function(err) {
     if (err) {
-      callback(err);
+      return callback(err);
     }
 
     callback();
@@ -329,7 +330,7 @@ DockerCache.prototype.deleteContainer = function(container) {
   
       multi.exec(function(err, replies) {
         if (err) {
-          cb(err)
+          return cb(err)
         }
         
         cb();
@@ -455,18 +456,18 @@ DockerCache.prototype.clearExpiredHosts = function() {
 
       cache.redis.hget(key, "last_update", function(err, last_update) {
         if (err) {
-          cb(err);
+          return cb(err);
         }
         
         cache.redis.hget(key, "update_interval", function(err, update_interval) {
           if (err) {
-            cb(err);
+            return cb(err);
           }
           
           var timestamp = new Date().getTime();
           
           if ( (timestamp - last_update) > (2 * update_interval) ) {
-            cb(null, true)
+            return cb(null, true)
           }
           
           cb(null, false);
@@ -478,7 +479,7 @@ DockerCache.prototype.clearExpiredHosts = function() {
         cache.emit('log', 'error', err);
         cache.emit('error', err);
       }
-      console.log(true);
+
       if (expired == true) {
         //cache.deleteHost(host);
       }
