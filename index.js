@@ -13,7 +13,8 @@ var DockerCache = function DockerCache(opts) {
   this.id = opts.id || "docker";
   this.prefix = opts.prefix || "docker";
   this.updateInterval = (opts.updateInterval || 120) * 1000;
-  this.ttl = opts.ttl || this.updateInterval * 1.5;
+  this.expireInterval = (opts.expireInterval || this.updateInterval);
+  this.ttl = opts.ttl || ((this.updateInterval * 1.5) / 1000);
 
   this.clearInterval = this.updateInterval + (Math.floor((Math.random() * 120) + 1) * 1000);
 
@@ -60,8 +61,21 @@ DockerCache.prototype.run = function() {
       });
     });
   });
-  
+
   events.on('die', function(event) {
+    cache.docker.getContainer(event.id).inspect(function (err, containerInfo) {
+      containerInfo.Id = containerInfo.ID || containerInfo.Id;
+
+      cache.addContainer(containerInfo, function(err) {
+        if (err) {
+          cache.emit('log', 'error', err);
+          cache.emit('error', err);
+        }
+      });
+    });
+  });
+
+  events.on('destroy', function(event) {
     cache.docker.getContainer(event.id).inspect(function (err, containerInfo) {
       containerInfo.Id = containerInfo.ID || containerInfo.Id;
 
@@ -77,9 +91,11 @@ DockerCache.prototype.run = function() {
   // Update Immediatelly then Periodically Update
   cache.updateContainers();
   cache.updateImages();
+  cache.clearExpiredContainers();
   
   setInterval(cache.updateContainers.bind(this), cache.updateInterval);
   setInterval(cache.updateImages.bind(this), cache.imageUpdateInterval);
+  setInterval(cache.clearExpiredContainers.bind(this), cache.expireInterval);
   
   return this;
 };
@@ -374,6 +390,46 @@ DockerCache.prototype.updateImages = function() {
   });
 };
 
+DockerCache.prototype.clearExpiredContainers = function() {
+  var cache = this;
+  
+  var key = util.format("%s:containers", cache.prefix);
+
+  cache.redis.smembers(key, function(err, containers) {
+    async.each(containers, function(container, cb) {
+      var container_key = util.format("%s:containers:%s", cache.prefix, container)
+
+      cache.redis.exists(container_key, function(err, exists) {
+        if (err) {
+          cache.emit('log', 'error', err);
+          cache.emit('error', err);
+          return cb(err);
+        }
+
+        if (exists == 0) {
+          cache.redis.srem(key, container, function(err, success) {
+            if (err) {
+              cache.emit('log', 'error', err);
+              cache.emit('error', err);
+              return cb(err);
+            }
+
+            cache.emit('log', 'debug', util.format('clearExpiredContainer - host: %s, container: %s', cache.id, container));
+          });
+        }
+      })
+    }, function (err) {
+      if (err) {
+        cache.emit('log', 'error', err);
+        cache.emit('error', err);
+        return cb(err);
+      }
+      
+      cb();
+    })
+  });
+};
+
 DockerCache.prototype.refreshHostLastUpdate = function() {
   var cache = this;
   
@@ -382,7 +438,6 @@ DockerCache.prototype.refreshHostLastUpdate = function() {
   
   cache.redis.hset(key, "last_update", time);
 };
-
 
 DockerCache.prototype.clearExpiredHosts = function() {
   var cache = this;
