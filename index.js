@@ -92,10 +92,12 @@ DockerCache.prototype.run = function() {
   cache.updateContainers();
   cache.updateImages();
   cache.clearExpiredContainers();
+  cache.clearExpiredHosts();
   
   setInterval(cache.updateContainers.bind(this), cache.updateInterval);
   setInterval(cache.updateImages.bind(this), cache.imageUpdateInterval);
   setInterval(cache.clearExpiredContainers.bind(this), cache.expireInterval);
+  setInterval(cache.clearExpiredHosts.bind(this), cache.expireInterval);
   
   return this;
 };
@@ -170,7 +172,6 @@ DockerCache.prototype.setContainerList = function(containers) {
       
       var key = util.format("%s:hosts", cache.prefix);
       cache.redis.sadd(key, cache.id);
-      cache.redis.expire(key, cache.ttl);
       
       cb();
     }
@@ -431,6 +432,7 @@ DockerCache.prototype.clearExpiredContainers = function() {
   });
 };
 
+
 DockerCache.prototype.refreshHostLastUpdate = function() {
   var cache = this;
   
@@ -440,50 +442,47 @@ DockerCache.prototype.refreshHostLastUpdate = function() {
   cache.redis.hset(key, "last_update", time);
 };
 
+
 DockerCache.prototype.clearExpiredHosts = function() {
   var cache = this;
+
+
+  var cache = this;
   
-  var key = cache.prefix + ":hosts";
-  cache.redis.smembers(key, function(err, hosts) {
-    if (err) {
-      cache.emit('log', 'error', err);
-      cache.emit('error', err);
-      return;
-    }
+  var key = util.format("%s:hosts", cache.prefix);
 
+  cache.redis.smembers(key, function(err, host) {
     async.each(hosts, function(host, cb) {
-      var key = util.format("%s:hosts:%s", cache.prefix.host);
+      var host_key = util.format("%s:hosts:%s", cache.prefix, host)
 
-      cache.redis.hget(key, "last_update", function(err, last_update) {
+      cache.redis.exists(host_key, function(err, exists) {
         if (err) {
+          cache.emit('log', 'error', err);
+          cache.emit('error', err);
           return cb(err);
         }
-        
-        cache.redis.hget(key, "update_interval", function(err, update_interval) {
-          if (err) {
-            return cb(err);
-          }
-          
-          var timestamp = new Date().getTime();
-          
-          if ( (timestamp - last_update) > (2 * update_interval) ) {
-            return cb(null, true)
-          }
-          
-          cb(null, false);
-        });
 
-      });
-    }, function(err, expired) {
+        if (exists == 0) {
+          cache.redis.srem(key, host, function(err, success) {
+            if (err) {
+              cache.emit('log', 'error', err);
+              cache.emit('error', err);
+              return cb(err);
+            }
+
+            cache.emit('log', 'debug', util.format('clearExpiredHosts - host: %s, cleared_host: %s', cache.id, host));
+          });
+        }
+      })
+    }, function (err) {
       if (err) {
         cache.emit('log', 'error', err);
         cache.emit('error', err);
+        return cb(err);
       }
-
-      if (expired == true) {
-        //cache.deleteHost(host);
-      }
-    });
+      
+      cb();
+    })
   });
 };
 
