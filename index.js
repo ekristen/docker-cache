@@ -76,15 +76,12 @@ DockerCache.prototype.run = function() {
   });
 
   events.on('destroy', function(event) {
-    cache.docker.getContainer(event.id).inspect(function (err, containerInfo) {
-      containerInfo.Id = containerInfo.ID || containerInfo.Id;
-
-      cache.deleteContainer(containerInfo, function(err) {
-        if (err) {
-          cache.emit('log', 'error', err);
-          cache.emit('error', err);
-        }
-      });
+    var containerInfo = { Id: event.id };
+    cache.deleteContainer(containerInfo, function(err) {
+      if (err) {
+        cache.emit('log', 'error', err);
+        cache.emit('error', err);
+      }
     });
   });
 
@@ -193,6 +190,7 @@ DockerCache.prototype.setContainerInfo = function(container, callback) {
   async.series([
     function(cb) {
       var key = util.format("%s:containers:%s", cache.prefix, container.Id);
+      var host_key = util.format("%s:hosts:%s:containers", cache.prefix, cache.id);
       
       var multi = cache.redis.multi()
       multi.del(key)
@@ -206,6 +204,8 @@ DockerCache.prototype.setContainerInfo = function(container, callback) {
       multi.hset(key, "host", cache.id);
   
       multi.expire(key, Number(cache.ttl));
+  
+      multi.sadd(host_key, container.Id);
   
       multi.exec(function(err, replies) {
         if (err) {
@@ -451,7 +451,7 @@ DockerCache.prototype.clearExpiredHosts = function() {
   
   var key = util.format("%s:hosts", cache.prefix);
 
-  cache.redis.smembers(key, function(err, host) {
+  cache.redis.smembers(key, function(err, hosts) {
     async.each(hosts, function(host, cb) {
       var host_key = util.format("%s:hosts:%s", cache.prefix, host)
 
@@ -478,10 +478,7 @@ DockerCache.prototype.clearExpiredHosts = function() {
       if (err) {
         cache.emit('log', 'error', err);
         cache.emit('error', err);
-        return cb(err);
       }
-      
-      cb();
     })
   });
 };
